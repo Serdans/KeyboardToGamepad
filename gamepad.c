@@ -20,82 +20,129 @@ const __u16 key_bindings[KEY_CNT] = {
 
     [KEY_F] = BTN_SELECT,
     [KEY_G] = BTN_START,
+
+    [KEY_Z] = BTN_DPAD_LEFT,
+    [KEY_C] = BTN_DPAD_RIGHT,
+    [KEY_S] = BTN_DPAD_UP,
+    [KEY_X] = BTN_DPAD_DOWN,
 };
 
 const __u16 joystick_keybinds[KEY_CNT] = {
-    [KEY_A] = ABS_X,
-    [KEY_D] = ABS_X,
-    [KEY_S] = ABS_Y,
-    [KEY_W] = ABS_Y};
+    [KEY_Q] = ABS_X, // Left
+    [KEY_E] = ABS_X, // Right
+    [KEY_2] = ABS_Y, // Up
+    [KEY_W] = ABS_Y, // Down
+
+    [KEY_SEMICOLON] = ABS_RX,
+    [KEY_BACKSLASH] = ABS_RX,
+    [KEY_LEFTBRACE] = ABS_RY,
+    [KEY_APOSTROPHE] = ABS_RY,
+
+    [KEY_LEFT] = ABS_RX,
+    [KEY_RIGHT] = ABS_RX,
+    [KEY_UP] = ABS_RY,
+    [KEY_DOWN] = ABS_RY,
+};
+
+const __u16 MAX_JOYSTICK_VALUE = 512;
 
 const __u16 joystick_values[KEY_CNT] = {
-    [KEY_A] = -256,
-    [KEY_S] = 256,
-    [KEY_D] = 256,
-    [KEY_W] = -256};
+    [KEY_Q] = -MAX_JOYSTICK_VALUE,
+    [KEY_E] = MAX_JOYSTICK_VALUE,
+    [KEY_2] = -MAX_JOYSTICK_VALUE,
+    [KEY_W] = MAX_JOYSTICK_VALUE,
 
-int translate_keyboard_to_gamepad(int gamepad_fd, struct input_event *kbevent)
+    [KEY_SEMICOLON] = -MAX_JOYSTICK_VALUE,
+    [KEY_BACKSLASH] = MAX_JOYSTICK_VALUE,
+    [KEY_LEFTBRACE] = -MAX_JOYSTICK_VALUE,
+    [KEY_APOSTROPHE] = MAX_JOYSTICK_VALUE,
+
+    [KEY_LEFT] = -MAX_JOYSTICK_VALUE,
+    [KEY_RIGHT] = MAX_JOYSTICK_VALUE,
+    [KEY_UP] = -MAX_JOYSTICK_VALUE,
+    [KEY_DOWN] = MAX_JOYSTICK_VALUE,
+};
+
+int write_to_gamepad(int gamepad_fd, struct input_event ev)
 {
-  struct input_event ev;
-  memset(&ev, 0, sizeof(struct input_event)); // setting the memory for event
-  if (key_bindings[kbevent->code])
-  {
-    ev.type = kbevent->type;
-    ev.code = key_bindings[kbevent->code];
-    ev.value = kbevent->value;
-  }
-  else if (joystick_keybinds[kbevent->code] || kbevent->code == KEY_A || kbevent->code == KEY_D)
-  {
-    ev.type = EV_ABS;
-    ev.code = joystick_keybinds[kbevent->code];
-    ev.value = kbevent->value == 1 || kbevent->value == 2 ? joystick_values[kbevent->code] : 0;
-  }
-
   if (write(gamepad_fd, &ev, sizeof(struct input_event)) < 0) // writing the key change
   {
     printf("error: key-write");
     return 1;
   }
+}
 
+int translate_keyboard_to_gamepad(int gamepad_fd, struct input_event *kbevent)
+{
+  struct input_event ev;
+
+  if (key_bindings[kbevent->code])
+  {
+    ev.type = kbevent->type;
+    ev.code = key_bindings[kbevent->code];
+    ev.value = kbevent->value;
+    write_to_gamepad(gamepad_fd, ev);
+  }
+  else if (joystick_keybinds[kbevent->code] || kbevent->code == KEY_Q || kbevent->code == KEY_E)
+  {
+    ev.type = EV_ABS;
+    ev.code = joystick_keybinds[kbevent->code];
+    ev.value = kbevent->value == 1 || kbevent->value == 2 ? joystick_values[kbevent->code] : 0;
+    write_to_gamepad(gamepad_fd, ev);
+  }
+  else if (kbevent->type == EV_KEY && kbevent->value == 1)
+  {
+    // printf("Unknown key: %i\n", kbevent->code);
+  }
+
+  memset(&ev, 0, sizeof(struct input_event));
+  ev.type = EV_SYN;
+  ev.code = SYN_REPORT;
+  ev.value = 0;
+  if (write(gamepad_fd, &ev, sizeof(struct input_event)) < 0) // writing the sync report
+  {
+    printf("error: sync-report");
+    return 1;
+  }
   return 0;
 }
 
 int main(void)
 {
-  int fd = open("/dev/uinput", O_WRONLY | O_NONBLOCK); // opening of uinput
-  int fdin = open("/dev/input/event4", O_RDONLY);
+  int gamepad_fd = open("/dev/uinput", O_WRONLY | O_NONBLOCK); // opening of uinput
+  int keyboard_fd = open("/dev/input/event4", O_RDONLY);
 
-  if (fd < 0 || fdin < 0)
+  if (gamepad_fd < 0 || keyboard_fd < 0)
   {
-    printf("Opening of uinput failed!\n");
+    printf("Opening of input failed!\n");
     return 1;
   }
 
-  ioctl(fd, UI_SET_EVBIT, EV_KEY); // setting Gamepad keys
-  ioctl(fd, UI_SET_KEYBIT, BTN_A);
-  ioctl(fd, UI_SET_KEYBIT, BTN_B);
-  ioctl(fd, UI_SET_KEYBIT, BTN_X);
-  ioctl(fd, UI_SET_KEYBIT, BTN_Y);
-  ioctl(fd, UI_SET_KEYBIT, BTN_TL);
-  ioctl(fd, UI_SET_KEYBIT, BTN_TR);
-  ioctl(fd, UI_SET_KEYBIT, BTN_TL2);
-  ioctl(fd, UI_SET_KEYBIT, BTN_TR2);
-  ioctl(fd, UI_SET_KEYBIT, BTN_START);
-  ioctl(fd, UI_SET_KEYBIT, BTN_SELECT);
-  ioctl(fd, UI_SET_KEYBIT, BTN_THUMBL);
-  ioctl(fd, UI_SET_KEYBIT, BTN_THUMBR);
-  ioctl(fd, UI_SET_KEYBIT, BTN_DPAD_UP);
-  ioctl(fd, UI_SET_KEYBIT, BTN_DPAD_DOWN);
-  ioctl(fd, UI_SET_KEYBIT, BTN_DPAD_LEFT);
-  ioctl(fd, UI_SET_KEYBIT, BTN_DPAD_RIGHT);
+  ioctl(gamepad_fd, UI_SET_EVBIT, EV_KEY); // setting Gamepad keys
+  ioctl(gamepad_fd, UI_SET_KEYBIT, BTN_A);
+  ioctl(gamepad_fd, UI_SET_KEYBIT, BTN_B);
+  ioctl(gamepad_fd, UI_SET_KEYBIT, BTN_X);
+  ioctl(gamepad_fd, UI_SET_KEYBIT, BTN_Y);
+  ioctl(gamepad_fd, UI_SET_KEYBIT, BTN_TL);
+  ioctl(gamepad_fd, UI_SET_KEYBIT, BTN_TR);
+  ioctl(gamepad_fd, UI_SET_KEYBIT, BTN_TL2);
+  ioctl(gamepad_fd, UI_SET_KEYBIT, BTN_TR2);
+  ioctl(gamepad_fd, UI_SET_KEYBIT, BTN_START);
+  ioctl(gamepad_fd, UI_SET_KEYBIT, BTN_SELECT);
+  ioctl(gamepad_fd, UI_SET_KEYBIT, BTN_THUMBL);
+  ioctl(gamepad_fd, UI_SET_KEYBIT, BTN_THUMBR);
+  ioctl(gamepad_fd, UI_SET_KEYBIT, BTN_DPAD_UP);
+  ioctl(gamepad_fd, UI_SET_KEYBIT, BTN_DPAD_DOWN);
+  ioctl(gamepad_fd, UI_SET_KEYBIT, BTN_DPAD_LEFT);
+  ioctl(gamepad_fd, UI_SET_KEYBIT, BTN_DPAD_RIGHT);
 
-  ioctl(fd, UI_SET_EVBIT, EV_ABS); // setting Gamepad thumbsticks
-  ioctl(fd, UI_SET_ABSBIT, ABS_X);
-  ioctl(fd, UI_SET_ABSBIT, ABS_Y);
-  ioctl(fd, UI_SET_ABSBIT, ABS_RX);
-  ioctl(fd, UI_SET_ABSBIT, ABS_RY);
+  ioctl(gamepad_fd, UI_SET_EVBIT, EV_ABS); // setting Gamepad thumbsticks
+  ioctl(gamepad_fd, UI_SET_ABSBIT, ABS_X);
+  ioctl(gamepad_fd, UI_SET_ABSBIT, ABS_Y);
+  ioctl(gamepad_fd, UI_SET_ABSBIT, ABS_RX);
+  ioctl(gamepad_fd, UI_SET_ABSBIT, ABS_RY);
 
-  struct uinput_user_dev uidev; // s etting the default settings of Gamepad
+  struct uinput_user_dev uidev; // setting the default settings of Gamepad
   memset(&uidev, 0, sizeof(uidev));
   snprintf(uidev.name, UINPUT_MAX_NAME_SIZE, "Poor Man's Gamepad"); // Name of Gamepad
   uidev.id.bustype = BUS_USB;
@@ -103,33 +150,33 @@ int main(void)
   uidev.id.product = 0x3;
   uidev.id.version = 2;
 
-  uidev.absmax[ABS_X] = 512; // Parameters of thumbsticks
-  uidev.absmin[ABS_X] = -512;
+  uidev.absmax[ABS_X] = MAX_JOYSTICK_VALUE; // Parameters of thumbsticks
+  uidev.absmin[ABS_X] = -MAX_JOYSTICK_VALUE;
   uidev.absfuzz[ABS_X] = 0;
   uidev.absflat[ABS_X] = 15;
 
-  uidev.absmax[ABS_Y] = 512;
-  uidev.absmin[ABS_Y] = -512;
+  uidev.absmax[ABS_Y] = MAX_JOYSTICK_VALUE;
+  uidev.absmin[ABS_Y] = -MAX_JOYSTICK_VALUE;
   uidev.absfuzz[ABS_Y] = 0;
   uidev.absflat[ABS_Y] = 15;
 
-  uidev.absmax[ABS_RX] = 512;
-  uidev.absmin[ABS_RX] = -512;
+  uidev.absmax[ABS_RX] = MAX_JOYSTICK_VALUE;
+  uidev.absmin[ABS_RX] = -MAX_JOYSTICK_VALUE;
   uidev.absfuzz[ABS_RX] = 0;
   uidev.absflat[ABS_RX] = 16;
 
-  uidev.absmax[ABS_RY] = 512;
-  uidev.absmin[ABS_RY] = -512;
+  uidev.absmax[ABS_RY] = MAX_JOYSTICK_VALUE;
+  uidev.absmin[ABS_RY] = -MAX_JOYSTICK_VALUE;
   uidev.absfuzz[ABS_RY] = 0;
   uidev.absflat[ABS_RY] = 16;
 
-  if (write(fd, &uidev, sizeof(uidev)) < 0) // writing settings
+  if (write(gamepad_fd, &uidev, sizeof(uidev)) < 0) // writing settings
   {
     printf("error: write");
     return 1;
   }
 
-  if (ioctl(fd, UI_DEV_CREATE) < 0) // writing ui dev create
+  if (ioctl(gamepad_fd, UI_DEV_CREATE) < 0) // writing ui dev create
   {
     printf("error: ui_dev_create");
     return 1;
@@ -137,13 +184,12 @@ int main(void)
 
   struct input_event kbev;
   ssize_t bytes_read;
-  unsigned char toggle = 0;
   while (1)
   {
-    bytes_read = read(fdin, &kbev, sizeof(struct input_event));
+    bytes_read = read(keyboard_fd, &kbev, sizeof(struct input_event));
     if (bytes_read == sizeof(struct input_event))
     {
-      int result = translate_keyboard_to_gamepad(fd, &kbev);
+      int result = translate_keyboard_to_gamepad(gamepad_fd, &kbev);
       if (result == 1)
       {
         return 1;
@@ -151,13 +197,13 @@ int main(void)
     }
   }
 
-  if (ioctl(fd, UI_DEV_DESTROY) < 0)
+  if (ioctl(gamepad_fd, UI_DEV_DESTROY) < 0)
   {
     printf("error: ioctl");
     return 1;
   }
 
-  close(fd);
-  close(fdin);
+  close(gamepad_fd);
+  close(keyboard_fd);
   return 1;
 }
